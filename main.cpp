@@ -1,3 +1,6 @@
+#include <stdio.h>
+#include <assert.h>
+#include <stdint.h>
 #include <iostream>
 #include <random>
 #include "texture.h"
@@ -24,6 +27,62 @@ vec3 color(const ray &r, hitable *world, int depth) {
         return vec3(0, 0, 0);
 }
 
+class framebuffer {
+public:
+    static constexpr size_t kBytesPerPixel = 3;
+
+    framebuffer(size_t width, size_t height):
+        width_(width),
+        height_(height),
+        data_((uint8_t*)malloc(width * height * kBytesPerPixel)) {}
+
+    ~framebuffer() { free(data_); }
+
+    void set_pixel(size_t row,
+                    size_t col,
+                    size_t r,
+                    size_t g,
+                    size_t b ) {
+        const size_t idx = kBytesPerPixel * (row * width_ + col);
+        data_[idx + 0] = b;
+        data_[idx + 1] = g;
+        data_[idx + 2] = r;
+    }
+
+    void save(const char* file_path) const {
+        FILE* fptr = fopen(file_path, "wb");
+        assert(fptr);
+        putc(0,fptr);
+        putc(0, fptr);
+        putc(2, fptr); /* uncompressed RGB */
+        putc(0, fptr);
+        putc(0, fptr);
+        putc(0, fptr);
+        putc(0, fptr);
+        putc(0, fptr);
+        putc(0, fptr);
+        putc(0, fptr); /* X origin */
+        putc(0, fptr);
+        putc(0, fptr); /* y origin */
+        putc((width_ & 0x00FF), fptr);
+        putc((width_ & 0xFF00) / 256, fptr);
+        putc((height_ & 0x00FF), fptr);
+        putc((height_ & 0xFF00) / 256, fptr);
+        putc(24, fptr); /* 24 bit bitmap */
+        putc(0, fptr);
+        fwrite(data_, kBytesPerPixel, width_ * height_, fptr);
+        fclose(fptr);
+    }
+
+    size_t width(){return width_;}
+    size_t height(){return height_;}
+
+private:
+    uint8_t *data_;
+    size_t  width_;
+    size_t  height_;
+};
+
 
 int main() {
     int nx = 1200;
@@ -31,9 +90,9 @@ int main() {
     int ns = 100;
     std::cout << "P3\n" << nx << " " << ny << "\n255\n";
 
-    hitable *world = cornell_box();
+    hitable *world = final();
 
-    vec3 lookfrom(278, 278, -800);
+    vec3 lookfrom(278, 278, -500);
     vec3 lookat(278, 278, 0);
     float dist_to_focus = 10.0;
     float aperture = 0.0;
@@ -59,6 +118,9 @@ int main() {
             }
             col /= float(ns);
             col = vec3(sqrt(col[0]), sqrt(col[1]), sqrt(col[2]));
+            col[0] = (col[0] > 1) ? 1.0f : col[0];
+            col[1] = (col[1] > 1) ? 1.0f : col[1];
+            col[2] = (col[2] > 1) ? 1.0f : col[2];
             int ir = int(255.99 * col[0]);
             int ig = int(255.99 * col[1]);
             int ib = int(255.99 * col[2]);
@@ -70,6 +132,7 @@ int main() {
         }
 
     }
+
 
     return 0;
 }
