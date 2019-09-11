@@ -3,25 +3,28 @@
 #include <stdint.h>
 #include <iostream>
 #include <random>
+#include <float.h>
+#include <time.h>
 #include "texture.h"
 #include "primitive.h"
 #include "hitable_list.h"
 #include "camera.h"
 #include "material.h"
 #include "scene.h"
-#include <float.h>
 
 vec3 color(const ray &r, hitable *world, int depth) {
     hit_record rec;
     if (world->hit(r, 0.001, FLT_MAX, rec)) {
         ray scattered;
-        vec3 attenuation;
         vec3 emitted = rec.mat_ptr->emitted(rec.u, rec.v, rec.p);
-        if (depth < 50 && rec.mat_ptr->scatter(r, rec, attenuation, scattered))
-            return emitted + attenuation * color(scattered, world, depth + 1);
+        float pdf;
+        vec3 albedo;
+        if (depth < 50 && rec.mat_ptr->scatter(r, rec, albedo, scattered, pdf)) {
+            if(pdf < 0.00001)pdf = 0.00001;
+            return emitted + albedo * rec.mat_ptr->scattering_pdf(r, rec, scattered) * color(scattered, world, depth + 1) / pdf;
+        }
         else
             return emitted;
-        
     }
     else 
         return vec3(0, 0, 0);
@@ -83,24 +86,57 @@ private:
     size_t  height_;
 };
 
+void cornell_box(hitable **scene, camera **cam, float aspect)
+{
+    int i = 0;
+    hitable ** list = new hitable*[8];
+    material *red = new lambertian(new constant_texture(vec3(0.65, 0.05, 0.05)));
+    material *white = new lambertian(new constant_texture(vec3(0.73, 0.73, 0.73)));
+    material *green = new lambertian(new constant_texture(vec3(0.12, 0.45, 0.15)));
+    material *light = new diffuse_light(new constant_texture(vec3(15, 15, 15)));
+
+    list[i++] = new flip_normals(new yz_rect(0, 555, 0, 555, 555, green));
+    list[i++] = new yz_rect(0, 555, 0, 555, 0, red);
+    list[i++] = new zx_rect(227, 332, 213, 343, 554, light);
+    list[i++] = new flip_normals(new zx_rect(0, 555, 0, 555, 555, white));
+    list[i++] = new zx_rect(0, 555, 0, 555, 0, white);
+    list[i++] = new flip_normals(new xy_rect(0, 555, 0, 555, 555, white));
+    list[i++] = new translate(new rotate_y(new box(vec3(0, 0, 0), vec3(165, 165, 165), white), -18), vec3(130, 0, 65));
+    list[i++] = new translate(new rotate_y(new box(vec3(0, 0, 0), vec3(165, 330, 165), white), 15), vec3(265, 0, 295));
+
+    *scene = new hitable_list(list, i);
+
+    vec3 lookfrom(278, 278, -800);
+    vec3 lookat (278,278,0);
+    float dist_to_focus = 10.0;
+    float aperture = 0.0;
+    float vfov = 40.0;
+    *cam = new camera(lookfrom, lookat, vec3(0,1,0), vfov, aspect, aperture, dist_to_focus, 0.0, 1.0);
+}
 
 int main() {
     int nx = 1200;
     int ny = 800;
-    int ns = 100;
+    int ns = 50;
     std::cout << "P3\n" << nx << " " << ny << "\n255\n";
 
-    hitable *world = final();
+    hitable *world;
+    camera *cam;
+    cornell_box(&world, &cam, (float)nx/(float)ny);
 
-    vec3 lookfrom(278, 278, -500);
-    vec3 lookat(278, 278, 0);
-    float dist_to_focus = 10.0;
-    float aperture = 0.0;
-    float vfov = 40.0;
-
-    camera cam(lookfrom, lookat, vec3(0,1,0), vfov, float(nx)/float(ny), aperture, dist_to_focus, 0.0, 1.0);
+//    vec3 lookfrom(278, 278, -500);
+//    vec3 lookat(278, 278, 0);
+//    float dist_to_focus = 10.0;
+//    float aperture = 0.0;
+//    float vfov = 40.0;
+//
+//    camera cam(lookfrom, lookat, vec3(0,1,0), vfov, float(nx)/float(ny), aperture, dist_to_focus, 0.0, 1.0);
 
     std::cerr << "RENDERING START" << std::endl;
+    time_t begin_time = time(NULL);
+    time_t mid_time_before = begin_time;
+    time_t mid_time_current;
+
 
     for (int j = ny - 1; j >= 0; j--) {
 
@@ -113,7 +149,7 @@ int main() {
             for (int s = 0; s < ns; s++) {
                 float u = float(i + (float)rand()/(float)RAND_MAX) / float(nx);
                 float v = float(j + (float)rand()/(float)RAND_MAX) / float(ny);
-                ray r = cam.get_ray(u, v);
+                ray r = cam->get_ray(u, v);
                 col += color(r, world, 0);
             }
             col /= float(ns);
@@ -128,11 +164,14 @@ int main() {
             std::cout << ir << " " << ig << " " << ib << "\n";
         }
         if(j%100==0){// report
-            std::cerr << " done;" << std::endl;
+            mid_time_current = time(NULL);
+            std::cerr << " done | " << difftime(mid_time_current, mid_time_before) << " sec" << std::endl;
+            mid_time_before = mid_time_current;
         }
 
     }
-
+    int spending_time = (int)difftime(mid_time_current, begin_time);
+    std::cerr << "TIME : " << (spending_time / 60) << " min " << (spending_time % 60) << " sec" << std::endl;
 
     return 0;
 }
