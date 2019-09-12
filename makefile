@@ -2,18 +2,6 @@
 
 SRC :=
 SRC += main.cpp
-SRC += vec3.h
-SRC += ray.h
-SRC += primitive.h
-SRC += hitable.h
-SRC += hitable_list.h
-SRC += camera.h
-SRC += material.h
-SRC += scene.h
-SRC += aabb.h
-SRC += bvh.h
-SRC += texture.h
-SRC += perlin.h
 
 a.out: ${SRC}
 	${CXX} -g3 -fopenmp -o $@ main.cpp

@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <iostream>
+#include <fstream>
 #include <random>
 #include <float.h>
 #include <time.h>
@@ -15,12 +16,27 @@
 vec3 color(const ray &r, hitable *world, int depth) {
     hit_record rec;
     if (world->hit(r, 0.001, FLT_MAX, rec)) {
+
+        if(rec.t==0)return vec3(0, 0, 0);
+
         ray scattered;
-        vec3 emitted = rec.mat_ptr->emitted(rec.u, rec.v, rec.p);
+        vec3 emitted = rec.mat_ptr->emitted(r, rec, rec.u, rec.v, rec.p);
         float pdf;
         vec3 albedo;
         if (depth < 50 && rec.mat_ptr->scatter(r, rec, albedo, scattered, pdf)) {
-            if(pdf < 0.00001)pdf = 0.00001;
+            vec3 on_light = vec3(213 + drand() * (343 - 213), 554, 227 + drand() * (332 - 227));
+            vec3 to_light = on_light - rec.p;
+            float distance_squared = to_light.squared_length();
+            to_light.make_unit_vector();
+            if (dot(to_light, rec.normal) < 0)
+                return emitted;
+            float light_area = (343-213)*(332-227);
+            float light_cosine = fabs(to_light.y());
+            if(light_cosine < 0.000001)
+                return emitted;
+            pdf = distance_squared / (light_cosine * light_area);
+            scattered = ray(rec.p, to_light, r.time());
+
             return emitted + albedo * rec.mat_ptr->scattering_pdf(r, rec, scattered) * color(scattered, world, depth + 1) / pdf;
         }
         else
@@ -97,7 +113,7 @@ void cornell_box(hitable **scene, camera **cam, float aspect)
 
     list[i++] = new flip_normals(new yz_rect(0, 555, 0, 555, 555, green));
     list[i++] = new yz_rect(0, 555, 0, 555, 0, red);
-    list[i++] = new zx_rect(227, 332, 213, 343, 554, light);
+    list[i++] = new flip_normals(new zx_rect(227, 332, 213, 343, 554, light));
     list[i++] = new flip_normals(new zx_rect(0, 555, 0, 555, 555, white));
     list[i++] = new zx_rect(0, 555, 0, 555, 0, white);
     list[i++] = new flip_normals(new xy_rect(0, 555, 0, 555, 555, white));
@@ -114,11 +130,14 @@ void cornell_box(hitable **scene, camera **cam, float aspect)
     *cam = new camera(lookfrom, lookat, vec3(0,1,0), vfov, aspect, aperture, dist_to_focus, 0.0, 1.0);
 }
 
-int main() {
+int main(int argc, char *argv[]) {
     int nx = 1200;
     int ny = 800;
-    int ns = 50;
-    std::cout << "P3\n" << nx << " " << ny << "\n255\n";
+    int ns = 10;
+
+    std::fstream fs;
+    fs.open("tmp.ppm", std::ios::out);
+    fs << "P3\n" << nx << " " << ny << "\n255\n";
 
     hitable *world;
     camera *cam;
@@ -136,6 +155,7 @@ int main() {
     time_t begin_time = time(NULL);
     time_t mid_time_before = begin_time;
     time_t mid_time_current;
+
 
 
     for (int j = ny - 1; j >= 0; j--) {
@@ -161,7 +181,7 @@ int main() {
             int ig = int(255.99 * col[1]);
             int ib = int(255.99 * col[2]);
 
-            std::cout << ir << " " << ig << " " << ib << "\n";
+            fs << ir << " " << ig << " " << ib << "\n";
         }
         if(j%100==0){// report
             mid_time_current = time(NULL);
@@ -172,6 +192,8 @@ int main() {
     }
     int spending_time = (int)difftime(mid_time_current, begin_time);
     std::cerr << "TIME : " << (spending_time / 60) << " min " << (spending_time % 60) << " sec" << std::endl;
+
+    fs.close();
 
     return 0;
 }
