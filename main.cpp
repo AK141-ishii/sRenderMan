@@ -12,6 +12,7 @@
 #include "camera.h"
 #include "material.h"
 #include "scene.h"
+#include "pdf.h"
 
 vec3 color(const ray &r, hitable *world, int depth) {
     hit_record rec;
@@ -20,24 +21,18 @@ vec3 color(const ray &r, hitable *world, int depth) {
         if(rec.t==0)return vec3(0, 0, 0);
 
         ray scattered;
+        vec3 attenuation;
         vec3 emitted = rec.mat_ptr->emitted(r, rec, rec.u, rec.v, rec.p);
-        float pdf;
+        float pdf_val;
         vec3 albedo;
-        if (depth < 50 && rec.mat_ptr->scatter(r, rec, albedo, scattered, pdf)) {
-            vec3 on_light = vec3(213 + drand() * (343 - 213), 554, 227 + drand() * (332 - 227));
-            vec3 to_light = on_light - rec.p;
-            float distance_squared = to_light.squared_length();
-            to_light.make_unit_vector();
-            if (dot(to_light, rec.normal) < 0)
-                return emitted;
-            float light_area = (343-213)*(332-227);
-            float light_cosine = fabs(to_light.y());
-            if(light_cosine < 0.000001)
-                return emitted;
-            pdf = distance_squared / (light_cosine * light_area);
-            scattered = ray(rec.p, to_light, r.time());
-
-            return emitted + albedo * rec.mat_ptr->scattering_pdf(r, rec, scattered) * color(scattered, world, depth + 1) / pdf;
+        if (depth < 50 && rec.mat_ptr->scatter(r, rec, albedo, scattered, pdf_val)) {
+            hitable *light_shape = new zx_rect(227, 332, 213, 343, 554, 0);
+            hitable_pdf p0(light_shape, rec.p);
+            cosine_pdf p1(rec.normal);
+            mixture_pdf p(&p0, &p1);
+            scattered = ray(rec.p, p.generate(), r.time());
+            pdf_val = p.value(scattered.direction());
+            return emitted + albedo * rec.mat_ptr->scattering_pdf(r, rec, scattered) * color(scattered, world, depth + 1) / pdf_val;
         }
         else
             return emitted;
@@ -133,7 +128,7 @@ void cornell_box(hitable **scene, camera **cam, float aspect)
 int main(int argc, char *argv[]) {
     int nx = 1200;
     int ny = 800;
-    int ns = 10;
+    int ns = 100;
 
     std::fstream fs;
     fs.open("tmp.ppm", std::ios::out);
