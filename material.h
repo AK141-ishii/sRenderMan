@@ -7,6 +7,7 @@
 #include "onb.h"
 #include "hitable.h"
 #include "texture.h"
+#include "pdf.h"
 
 float schlick(float cosine, float ref_idx) {
     float r0 = (1 - ref_idx) / (1 + ref_idx);
@@ -30,9 +31,16 @@ vec3 reflect(const vec3 &v, const vec3 &n) {
     return v - 2 * dot(v, n) * n;
 }
 
+struct scatter_record {
+    ray specular_ray;
+    bool is_specular;
+    vec3 attenuation;
+    pdf *pdf_ptr;
+};
+
 class material {
 public:
-    virtual bool scatter(const ray &r_in, const hit_record &rec, vec3 &albedo, ray &scattered, float &pdf) const {
+    virtual bool scatter(const ray &r_in, const hit_record &hrec, scatter_record &srec) const {
         return false; }
     virtual float scattering_pdf(const ray& r_in, const hit_record& rec, const ray& scattered) const {
         return false; }
@@ -70,16 +78,13 @@ public:
     lambertian(texture *a) : albedo(a) {}
     float scattering_pdf(const ray& r_in, const hit_record& rec, const ray& scattered) const {
         float cosine = dot(rec.normal, unit_vector(scattered.direction()));
-        if(cosine < 0) cosine = 0;
+        if(cosine < 0) return 0;
         return cosine / 3.1415926535f;
     }
-    bool scatter(const ray &r_in, const hit_record &rec, vec3 &alb, ray &scattered, float &pdf) const {
-        onb uvw;
-        uvw.build_from_w(rec.normal);
-        vec3 direction = uvw.local(random_cosine_direction());
-        scattered = ray(rec.p, unit_vector(direction), r_in.time());
-        alb = albedo->value(rec.u, rec.v, rec.p);
-        pdf = dot(uvw.w(), scattered.direction()) / 3.1415926535;
+    bool scatter(const ray &r_in, const hit_record &hrec, scatter_record &srec) const {
+        srec.is_specular = false;
+        srec.attenuation = albedo->value(hrec.u, hrec.v, hrec.p);
+        srec.pdf_ptr = new cosine_pdf(hrec.normal);
         return true;
     }
     texture *albedo;
@@ -92,11 +97,13 @@ public:
         if (f < 1) fuzz = f;
         else fuzz = 1;
     }
-    virtual bool scatter(const ray &r_in, const hit_record &rec, vec3 &attenuation, ray &scattered) const {
-        vec3 reflected = reflect(unit_vector(r_in.direction()), rec.normal);
-        scattered = ray(rec.p, reflected + fuzz * random_in_unit_sphere());
-        attenuation = albedo;
-        return (dot(scattered.direction(), rec.normal) > 0);
+    virtual bool scatter(const ray &r_in, const hit_record &hrec, scatter_record &srec) const {
+        vec3 reflected = reflect(unit_vector(r_in.direction()), hrec.normal);
+        srec.specular_ray = ray(hrec.p, reflected + fuzz * random_in_unit_sphere());
+        srec.attenuation = albedo;
+        srec.is_specular = true;
+        srec.pdf_ptr = 0;
+        return true;
     }
     vec3 albedo;
     float fuzz;
@@ -108,23 +115,25 @@ class dielectric : public material
 {
 public:
     dielectric(float ri) : ref_idx(ri) {}
-    virtual bool scatter(const ray &r_in, const hit_record &rec, vec3 &attenuation, ray &scattered) const {
+    virtual bool scatter(const ray &r_in, const hit_record &hrec, scatter_record &srec) const {
+        srec.is_specular = true;
+        srec.pdf_ptr = 0;
+        srec.attenuation = vec3(1.0, 1.0, 1.0);
         vec3 outward_normal;
-        vec3 reflected = reflect(r_in.direction(), rec.normal);
+        vec3 reflected = reflect(r_in.direction(), hrec.normal);
         vec3 refracted;
         float ni_over_nt;
-        attenuation = vec3(1.0, 1.0, 1.0);
         float reflect_prob;
         float cosine;
-        if (dot(r_in.direction(), rec.normal) > 0) {
-            outward_normal = -rec.normal;
+        if (dot(r_in.direction(), hrec.normal) > 0) {
+            outward_normal = -hrec.normal;
             ni_over_nt = ref_idx;
-            cosine = ref_idx * dot(r_in.direction(), rec.normal) / r_in.direction().length();
+            cosine = ref_idx * dot(r_in.direction(), hrec.normal) / r_in.direction().length();
         }
         else {
-            outward_normal = rec.normal;
+            outward_normal = hrec.normal;
             ni_over_nt = 1.0 / ref_idx;
-            cosine = -dot(r_in.direction(), rec.normal) / r_in.direction().length();
+            cosine = -dot(r_in.direction(), hrec.normal) / r_in.direction().length();
         }
         if (refract(r_in.direction(), outward_normal, ni_over_nt, refracted)) {
             reflect_prob = schlick(cosine, ref_idx);
@@ -134,10 +143,10 @@ public:
         }
 
         if((float)rand()/(float)RAND_MAX < reflect_prob){
-            scattered = ray(rec.p, reflected);
+            srec.specular_ray = ray(hrec.p, reflected);
         }
         else {
-            scattered = ray(rec.p, refracted);
+            srec.specular_ray = ray(hrec.p, refracted);
         }
         return true;
     }
