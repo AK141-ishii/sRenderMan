@@ -111,7 +111,7 @@ private:
 int main(int argc, char *argv[]) {
     int nx = 1200;
     int ny = 800;
-    int ns = 10;
+    int ns = 1000;
 
     std::fstream fs;
     fs.open("tmp.ppm", std::ios::out);
@@ -122,7 +122,7 @@ int main(int argc, char *argv[]) {
     float aspect = float(nx) / float(ny);
     hitable_list *hlist;
 
-    light_through_glass(&world, &cam, aspect, &hlist);
+    GI(&world, &cam, aspect, &hlist);
 
     std::cerr << "RENDERING START" << std::endl;
     time_t begin_time = time(NULL);

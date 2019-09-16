@@ -231,42 +231,73 @@ void cornell_box(hitable **scene, camera **cam, float aspect, hitable_list **hli
     *hlist = new hitable_list(a, 2);
 }
 
-void light_through_glass(hitable **scene, camera **cam, float aspect, hitable_list **hlist) {
+void GI(hitable **scene, camera **cam, float aspect, hitable_list **hlist) {
+
+    material *white = new lambertian(new constant_texture(vec3(0.73, 0.73, 0.73)));
+    material *red = new lambertian(new constant_texture(vec3(0.65, 0.05, 0.05)));
+    material *green = new lambertian(new constant_texture(vec3(0.12, 0.45, 0.15)));
+
+    material *light = new diffuse_light(new constant_texture(vec3(5, 5, 5)));
+    material *glass = new dielectric(1.5);
+    material *void_mat = new diffuse_light(new constant_texture(vec3(0, 0, 0)));
+    int nx, ny, nn;
+    unsigned char *tex_data = stbi_load("japanese-wall.jpg", &nx, &ny, &nn, 0);
+    material *emat = new lambertian(new image_texture(tex_data, nx, ny));
 
     // scene
     int i = 0;
-    hitable ** list = new hitable*[6];
-    material *white = new lambertian(new constant_texture(vec3(0.73, 0.73, 0.73)));
-    material *light = new diffuse_light(new constant_texture(vec3(15, 15, 15)));
-    material *red_light = new diffuse_light(new constant_texture(vec3(1, 0.5, 0.5)));
-    material *glass = new dielectric(1.5);
+    hitable ** list = new hitable*[22];
 
-    list[i++] = new sphere(vec3(200, -1000, 0), 1000, white);
-    list[i++] = new sphere(vec3(200, 200, -200), 80, glass);
+    // mainbox
+    list[i++] = new flip_normals(new yz_rect(0, 500, 0, 300, 500, green));
+    list[i++] = new flip_normals(new yz_rect(0, 300, 300, 500, 500, green));
+    list[i++] = new yz_rect(200, 500, 0, 200, 0, red);
+    list[i++] = new yz_rect(0, 500, 200, 500, 0, red);
+    list[i++] = new flip_normals(new zx_rect(0, 500, 0, 500, 500, white));
+    list[i++] = new zx_rect(0, 500, 0, 500, 0, white);
+    list[i++] = new flip_normals(new xy_rect(0, 500, 0, 500, 500, emat));
+    // void mask
+    list[i++] = new flip_normals(new xy_rect(-100, 0, 0, 500, 0, void_mat));
+    list[i++] = new flip_normals(new xy_rect(500, 1000, 0, 1000, 0, void_mat));
 
-    list[i++] = new flip_normals(new xy_rect(205, 225, 180, 220, 0, light));
+    // subbox(left-up)
+    list[i++] = new flip_normals(new yz_rect(300, 500, 300, 500, 550, white));
+    list[i++] = new flip_normals(new xy_rect(500, 550, 300, 500, 500, white));
+    list[i++] = new xy_rect(500, 550, 300, 500, 300, white);
+    list[i++] = new flip_normals(new zx_rect(300, 500, 500, 550, 500, white));
+    list[i++] = new zx_rect(300, 500, 500, 550, 300, white);
+    // light
+    list[i++] = new flip_normals(new yz_rect(320, 480, 320, 480, 549, light));
 
-    list[i++] = new flip_normals(new zx_rect(-100, 100, -100, 100, 500, light));
-    list[i++] = new yz_rect(150, 250, -50, 50, -100, red_light);
-    list[i++] = new flip_normals(new yz_rect(150, 250, -50, 50, 500, light));
+    // subbox(right-down)
+    list[i++] = new yz_rect(0, 200, 0, 200, -100, white);
+    list[i++] = new flip_normals(new xy_rect(-100, 0, 0, 200, 200, white));
+    list[i++] = new xy_rect(-100, 0, 0, 200, 0, white);
+    list[i++] = new flip_normals(new zx_rect(0, 200, -100, 0, 200, white));
+    list[i++] = new zx_rect(0, 200, -100, 0, 0, white);
+    //light
+    list[i++] = new yz_rect(30, 170, 30, 170, -99, light);
+
+    // object
+    list[i++] = new sphere(vec3(190, 90, 190), 90, glass);
+    list[i++] = new translate(new rotate_y(new box(vec3(0, 0, 0), vec3(165, 330, 165), white), 15), vec3(265, 0, 295));
 
     *scene = new hitable_list(list, i);
 
     // camera
-    vec3 lookfrom(200, 200, -500);
-    vec3 lookat (200, 200, 0);
+    vec3 lookfrom(250, 250, -800);
+    vec3 lookat (250, 250, 0);
     float dist_to_focus = 10.0;
     float aperture = 0.0;
     float vfov = 40.0;
     *cam = new camera(lookfrom, lookat, vec3(0,1,0), vfov, aspect, aperture, dist_to_focus, 0.0, 1.0);
 
     // light
-    hitable **a = new hitable *[4];
-    a[0] = new zx_rect(-100, 100, -100, 100, 500, 0);
-    a[1] = new xy_rect(205, 225, 180, 220, 0, 0);
-    a[2] = new yz_rect(150, 250, -50, 50, 0, 0);
-    a[3] = new yz_rect(150, 250, -50, 50, 400, 0);
-    *hlist = new hitable_list(a, 4);
+    hitable **a = new hitable *[3];
+    a[0] = new yz_rect(320, 480, 320, 480, 549, 0);
+    a[1] = new yz_rect(30, 170, 30, 170, -99, 0);
+    a[2] = new sphere(vec3(190, 90, 190), 90, 0);
+    *hlist = new hitable_list(a, 3);
 }
 
 #endif
